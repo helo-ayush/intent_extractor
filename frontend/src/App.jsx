@@ -54,7 +54,7 @@ function App() {
       const formData = new FormData()
       formData.append('audio', audioBlob, 'recording.mp4')
 
-      const res = await fetch('http://localhost:3000/process-audio', {
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'}/process-audio`, {
         method: 'POST',
         body: formData,
       })
