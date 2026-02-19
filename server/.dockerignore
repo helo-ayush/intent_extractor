@@ -1,0 +1,9 @@
+node_modules
+.env
+*.mp3
+*.m4a
+*.wav
+*.webm
+.DS_Store
+.git
+.gitignore

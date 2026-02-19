@@ -1,0 +1,47 @@
+{
+  "actions": {
+    "ScheduleMeeting": {
+      "description": "Organizes a new calendar event or meeting.",
+      "entities": {
+        "participants": "List of people or email addresses to invite",
+        "time": "The specific time of the meeting",
+        "date": "The specific date of the meeting",
+        "duration": "How long the meeting will last (e.g., 30 mins, 1 hour)",
+        "location_mode": "Whether the meeting is 'Online' (Zoom/Teams) or 'Offline' (Office/Room 302)"
+      }
+    },
+    "SendEmail": {
+      "description": "Drafts or sends an electronic mail to a contact.",
+      "entities": {
+        "recipient": "The name or email of the person receiving the mail",
+        "subject": "A brief summary of the email's purpose",
+        "body_summary": "The main point or message content to be included"
+      }
+    },
+    "DeviceControl": {
+      "description": "Adjusts hardware or IoT devices in the user's environment.",
+      "entities": {
+        "device": "The specific piece of hardware (e.g., Lights, AC, Fan, PC)",
+        "action_type": "The state change requested (e.g., Turn On, Turn Off, Set Temperature, Dim)",
+        "value": "The numerical setting if applicable (e.g., 22 degrees, 50% brightness)",
+        "room": "The location of the device (e.g., Bedroom, Kitchen, Office)"
+      }
+    },
+    "SearchDocumentation": {
+      "description": "Looks up technical info or company policies in the knowledge base.",
+      "entities": {
+        "query": "The specific topic or keyword to search for",
+        "source": "Optional specific documentation set (e.g., HR Portal, GitHub, Wiki)"
+      }
+    },
+    "Attendance": {
+      "description": "Records or checks the attendance of a person.",
+      "entities": {
+        "person_name": "The name of the individual whose attendance is being recorded or checked",
+        "date": "The date for which the attendance is relevant",
+        "status": "The attendance status (e.g., Present, Absent, Half-day, Leave)",
+        "reason": "The reason provided for an absence or leave, if any"
+      }
+    }
+  }
+}
