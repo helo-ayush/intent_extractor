@@ -1,65 +1,114 @@
+// Import the Express framework to create and manage the HTTP server
 import express from 'express';
+// Import dotenv to load environment variables from a .env file into process.env
 import dotenv from 'dotenv';
+// Import multer for handling multipart/form-data (file uploads like audio)
 import multer from 'multer';
+// Import axios for making HTTP requests (used to call the Groq Whisper API)
 import axios from 'axios';
+// Import FormData to construct multipart form data payloads for API calls
 import FormData from 'form-data';
+// Import the Google Generative AI SDK to interact with Gemini models
 import { GoogleGenAI } from "@google/genai";
+// Import CORS middleware to allow cross-origin requests from the frontend
 import cors from 'cors';
+// Import readFileSync from Node's fs module to synchronously read files from disk
 import { readFileSync } from "fs";
+// Load environment variables from the .env file into process.env
 dotenv.config();
 
+// Create a new Express application instance
 const app = express();
+// Initialize the Google Generative AI client using the API key from environment variables
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Load Configuration
+// Read and parse the config.json file which contains the actions schema (ScheduleMeeting, SendEmail, etc.)
 const config = JSON.parse(readFileSync("./config.json", "utf8"));
+// Convert the config object back to a formatted JSON string so it can be embedded in the AI prompt later
 const schemaString = JSON.stringify(config, null, 2);
 
-// Cors Setup
+// Define CORS options: allow requests from the frontend URL (or any origin if not set), only GET/POST methods, and allow credentials
 const corsOptions = {
     origin: process.env.FRONTEND_URL || '*',
     methods: ['GET', 'POST'],
     credentials: true
 };
+// Apply the CORS middleware to the Express app with the above options
 app.use(cors(corsOptions))
+// Enable Express to automatically parse incoming JSON request bodies
 app.use(express.json());
 
 
-// Multer Local Storage
+// Configure multer to store uploaded files in memory (as a Buffer) instead of writing to disk
 const storage = multer.memoryStorage();
+// Create a multer upload handler with the memory storage config and a 10MB file size limit
 const uploadDir = multer({
     storage: storage,
     limits: { fileSize: 10 * 1024 * 1024 } //  10MB file limit
 })
 
 
+// Define a POST endpoint at '/process-audio' that accepts a single file upload with the field name 'audio'
 app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
     try {
 
-        // If No Audio File found
+        // If no audio file was included in the request, return a 400 Bad Request error
         if (!req.file) {
             return res.status(400).json({ error: "No audio file found in the request." });
         }
 
-        // Start timer
+        // Record the current timestamp to measure total processing time later
         const startTime = Date.now();
 
-        // Transcribing Using Groq Whisper
+        // ===== GROQ WHISPER (commented out — replaced by Sarvam AI below) =====
+        // const formData = new FormData();
+        // formData.append('file', req.file.buffer, {
+        //     filename: `audio.${req.file.mimetype?.includes("webm") ? "webm" : "mp4"}`,
+        //     contentType: req.file.mimetype || "audio/mp4"
+        // });
+        // formData.append('model', 'whisper-large-v3');
+        //
+        // const groqResponse = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
+        //     headers: { ...formData.getHeaders(), 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` }
+        // });
+        //
+        // const rawTranscript = groqResponse.data.text || "";
+        // console.log("Transcript:", rawTranscript);
+        //
+        // if (!rawTranscript || rawTranscript.trim() === "") {
+        //     return res.json({
+        //         message: "No speech detected",
+        //         action: null,
+        //         refined_transcription: "",
+        //         confidence_score: 0
+        //     });
+        // }
+        // ===== END GROQ WHISPER =====
+
+        // Build multipart form data to send the audio file to Sarvam AI's Speech-to-Text REST API
         const formData = new FormData();
+        // Append the audio buffer from multer's memory storage with the correct filename and content type
         formData.append('file', req.file.buffer, {
             filename: `audio.${req.file.mimetype?.includes("webm") ? "webm" : "mp4"}`,
             contentType: req.file.mimetype || "audio/mp4"
         });
-        formData.append('model', 'whisper-large-v3');
+        // Use the saaras:v3 model (best for Indian languages) with "transcribe" mode
+        formData.append('model', 'saaras:v3');
+        formData.append('language_code', 'unknown');
 
-        const groqResponse = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
-            headers: { ...formData.getHeaders(), 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` }
+        // Send the audio to Sarvam AI's Speech-to-Text API for transcription
+        const sarvamResponse = await axios.post('https://api.sarvam.ai/speech-to-text', formData, {
+            headers: {
+                ...formData.getHeaders(),
+                'api-subscription-key': process.env.SARVAM_API_KEY
+            }
         });
 
-        const rawTranscript = groqResponse.data.text || "";
+        // Extract the transcribed text from the Sarvam API response
+        const rawTranscript = sarvamResponse.data.transcript || "";
         console.log("Transcript:", rawTranscript);
 
-        // Handle empty transcription (e.g., silence or noise)
+        // If the transcript is empty or whitespace-only (silence/noise), return a "no speech" response
         if (!rawTranscript || rawTranscript.trim() === "") {
             return res.json({
                 message: "No speech detected",
@@ -69,6 +118,8 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
             });
         }
 
+        // Build the detailed prompt for Gemini AI that instructs it to: identify intent, refine the transcription,
+        // match an action from the schema, extract entities, normalize values, and return structured JSON
         const prompt = `
             ### ROLE
             You are a highly accurate multilingual Voice-to-Intent Extraction Engine. Your task is to process a raw speech-to-text transcription (which may contain Hindi, English, or a mix of both) and convert it into a structured, executable JSON format based on a provided schema.
@@ -120,37 +171,50 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
             }
             `;
 
+        // Send the prompt to Gemini AI (gemini-2.5-flash-lite model) and await the generated response
         const geminiResult = await genAI.models.generateContent({
             model: "gemini-2.5-flash-lite",
             contents: prompt
         });
 
-        // Clean up the response (remove markdown blocks if present)
+        // Extract the text content from the Gemini response
         let responseText = geminiResult.text;
+        // If Gemini returned no text, log the error and respond with a 500 status
         if (!responseText) {
             console.error("No text in Gemini response:", geminiResult);
             return res.status(500).json({ error: "Gemini returned no text response" });
         }
+        // Remove any markdown code-block wrappers (```json ... ```) that Gemini might have included
         responseText = responseText.replace(/```json|```/g, "").trim();
 
+        // Declare a variable to hold the parsed JSON object
         let parsedResponse;
         try {
+            // Attempt to parse the cleaned response text as JSON
             parsedResponse = JSON.parse(responseText);
         } catch (e) {
+            // If parsing fails, log the raw response and return it with an error message
             console.error("Failed to parse AI response:", responseText);
             return res.json({ message: responseText, error: "AI returned invalid JSON" });
         }
 
+        // Calculate the total processing time in milliseconds (transcription + AI extraction)
         const totalTime = Date.now() - startTime;
+        // Log the total processing time to the console
         console.log(`⏱️ Total: ${totalTime}ms`);
+        // Send the parsed AI response along with the processing time back to the client
         res.json({ ...parsedResponse, processing_time_ms: totalTime });
 
     } catch (err) {
+        // Catch any unexpected errors in the entire pipeline and log them
         console.error("Server Error:", err);
+        // Return a generic 500 Internal Server Error response
         res.status(500).json({ error: "Process failed" });
     }
 })
 
+// Start the Express server on the configured PORT (from .env) or default to port 3000
 app.listen(process.env.PORT || 3000, () => {
+    // Log a confirmation message once the server is successfully running
     console.log(`Server running on port ${process.env.PORT || 3000}`);
 })
