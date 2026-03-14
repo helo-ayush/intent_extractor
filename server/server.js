@@ -47,6 +47,12 @@ const uploadDir = multer({
     limits: { fileSize: 10 * 1024 * 1024 } //  10MB file limit
 })
 
+// Add a root endpoint to verify the server is running
+app.get('/', (req, res) => {
+    console.info(`[INFO] [${new Date().toISOString()}] Health check endpoint '/' hit.`);
+    res.send('Intent Extractor API is running! 🚀 Send POST requests to /api/v1/extract-intent');
+});
+
 
 // Define a POST endpoint at '/api/v1/extract-intent' that accepts a single file upload with the field name 'audio'
 app.post('/api/v1/extract-intent', uploadDir.single('audio'), async (req, res) => {
