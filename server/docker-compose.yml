@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: intent-extraction-api
+    ports:
+      - "3000:7860" # Maps your machine's port 3000 to the container's port 7860
+    env_file:
+      - .env
+    restart: unless-stopped

@@ -48,8 +48,8 @@ const uploadDir = multer({
 })
 
 
-// Define a POST endpoint at '/process-audio' that accepts a single file upload with the field name 'audio'
-app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
+// Define a POST endpoint at '/api/v1/extract-intent' that accepts a single file upload with the field name 'audio'
+app.post('/api/v1/extract-intent', uploadDir.single('audio'), async (req, res) => {
     try {
 
         // If no audio file was included in the request, return a 400 Bad Request error
@@ -59,31 +59,8 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
 
         // Record the current timestamp to measure total processing time later
         const startTime = Date.now();
-
-        // ===== GROQ WHISPER (commented out — replaced by Sarvam AI below) =====
-        // const formData = new FormData();
-        // formData.append('file', req.file.buffer, {
-        //     filename: `audio.${req.file.mimetype?.includes("webm") ? "webm" : "mp4"}`,
-        //     contentType: req.file.mimetype || "audio/mp4"
-        // });
-        // formData.append('model', 'whisper-large-v3');
-        //
-        // const groqResponse = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', formData, {
-        //     headers: { ...formData.getHeaders(), 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` }
-        // });
-        //
-        // const rawTranscript = groqResponse.data.text || "";
-        // console.log("Transcript:", rawTranscript);
-        //
-        // if (!rawTranscript || rawTranscript.trim() === "") {
-        //     return res.json({
-        //         message: "No speech detected",
-        //         action: null,
-        //         refined_transcription: "",
-        //         confidence_score: 0
-        //     });
-        // }
-        // ===== END GROQ WHISPER =====
+        console.info(`[INFO] [${new Date().toISOString()}] New request received: /api/v1/extract-intent`);
+        console.info(`[INFO] File size: ${(req.file.size / 1024).toFixed(2)} KB, Type: ${req.file.mimetype}`);
 
         // Build multipart form data to send the audio file to Sarvam AI's Speech-to-Text REST API
         const formData = new FormData();
@@ -106,7 +83,7 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
 
         // Extract the transcribed text from the Sarvam API response
         const rawTranscript = sarvamResponse.data.transcript || "";
-        console.log("Transcript:", rawTranscript);
+        console.info(`[INFO] Transcription completed. Length: ${rawTranscript.length} characters.`);
 
         // If the transcript is empty or whitespace-only (silence/noise), return a "no speech" response
         if (!rawTranscript || rawTranscript.trim() === "") {
@@ -181,7 +158,7 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
         let responseText = geminiResult.text;
         // If Gemini returned no text, log the error and respond with a 500 status
         if (!responseText) {
-            console.error("No text in Gemini response:", geminiResult);
+            console.error(`[ERROR] [${new Date().toISOString()}] Gemini returned empty text response.`);
             return res.status(500).json({ error: "Gemini returned no text response" });
         }
         // Remove any markdown code-block wrappers (```json ... ```) that Gemini might have included
@@ -194,20 +171,21 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
             parsedResponse = JSON.parse(responseText);
         } catch (e) {
             // If parsing fails, log the raw response and return it with an error message
-            console.error("Failed to parse AI response:", responseText);
-            return res.json({ message: responseText, error: "AI returned invalid JSON" });
+            console.error(`[ERROR] [${new Date().toISOString()}] Failed to parse Gemini output as JSON.`);
+            console.error(`[DEBUG] Raw output:`, responseText);
+            return res.json({ message: "Failed to parse AI structure", raw_output: responseText, error: "AI returned invalid JSON" });
         }
 
         // Calculate the total processing time in milliseconds (transcription + AI extraction)
         const totalTime = Date.now() - startTime;
         // Log the total processing time to the console
-        console.log(`⏱️ Total: ${totalTime}ms`);
+        console.info(`[INFO] [${new Date().toISOString()}] Request successfully processed in ${totalTime}ms. Detected Action: ${parsedResponse.action || 'None'}`);
         // Send the parsed AI response along with the processing time back to the client
         res.json({ ...parsedResponse, processing_time_ms: totalTime });
 
     } catch (err) {
         // Catch any unexpected errors in the entire pipeline and log them
-        console.error("Server Error:", err);
+        console.error(`[ERROR] [${new Date().toISOString()}] Internal Server Error during /api/v1/extract-intent:`, err.message || err);
         // Return a generic 500 Internal Server Error response
         res.status(500).json({ error: "Process failed" });
     }
@@ -216,5 +194,5 @@ app.post('/process-audio', uploadDir.single('audio'), async (req, res) => {
 // Start the Express server on the configured PORT (from .env) or default to port 3000
 app.listen(process.env.PORT || 3000, () => {
     // Log a confirmation message once the server is successfully running
-    console.log(`Server running on port ${process.env.PORT || 3000}`);
+    console.info(`[STARTUP] Intent Extraction API server running on port ${process.env.PORT || 3000}`);
 })
